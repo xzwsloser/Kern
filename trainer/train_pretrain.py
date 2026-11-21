@@ -13,13 +13,23 @@ from contextlib import nullcontext
 from torch import optim, nn
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, DistributedSampler
+from tqdm import tqdm
 from model.model_kern import KernConfig
 from dataset.lm_dataset import PreTrainDataset
 from trainer.trainer_utils import get_lr, Logger, is_main_process, lm_checkpoint, init_distributed_mode, setup_seed, init_model, SkipBatchSampler
 
 def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
     start_time = time.time()
-    for step, (input_ids, labels) in enumerate(loader, start=start_step + 1):
+    progress_bar = tqdm(
+        loader,
+        total=iters,
+        initial=start_step,
+        desc=f'Epoch {epoch + 1}/{args.epochs}',
+        unit='step',
+        disable=not is_main_process(),
+        dynamic_ncols=True,
+    )
+    for step, (input_ids, labels) in enumerate(progress_bar, start=start_step + 1):
         input_ids = input_ids.to(args.device)
         labels = labels.to(args.device)
         # lr = init_lr * (0.1 + 0.45(1 + cos(pi * current_steps / totals_steps)))
@@ -52,6 +62,7 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
             current_lr = optimizer.param_groups[-1]['lr']
             eta_min = spend_time / max(step - start_step, 1) * (iters - step) // 60
             Logger(f'Epoch:[{epoch + 1}/{args.epochs}]({step}/{iters}), loss: {current_loss:.4f}, logits_loss: {current_logits_loss:.4f}, aux_loss: {current_aux_loss:.4f}, lr: {current_lr:.8f}, epoch_time: {eta_min:.1f}min')
+            progress_bar.set_postfix(loss=f'{current_loss:.4f}', lr=f'{current_lr:.2e}')
             if wandb: wandb.log({"loss": current_loss, "logits_loss": current_logits_loss, "aux_loss": current_aux_loss, "learning_rate": current_lr, "epoch_time": eta_min})
 
 
@@ -68,6 +79,8 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
             del state_dict
 
         del input_ids, labels, res, loss
+
+    progress_bar.close()
 
 
 
