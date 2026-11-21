@@ -206,4 +206,5 @@ def safe_math_eval(expression):
     try:
         return walk(ast.parse(expr, mode='eval').body)
     except (KeyError, SyntaxError, TypeError):
+        raise ValueError('不支持的表达式语法') from None
   

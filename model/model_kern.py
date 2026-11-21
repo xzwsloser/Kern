@@ -8,6 +8,7 @@ from transformers.modeling_outputs import MoeCausalLMOutputWithPast
 class KernConfig(PreTrainedConfig): 
     model_type = "kern" 
     def __init__(self, hidden_size=768, num_hidden_layers=8, use_moe=False, **kwargs):
+        super().__init__(**kwargs)
         # model arch
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
@@ -23,7 +24,7 @@ class KernConfig(PreTrainedConfig):
         self.tie_word_embedding = kwargs.get('tie_word_embeddings', True)
 
         # FFN Parameters
-        self.ffn_hidden_size = kwargs.get('ffn_hidden_size', math.ceil((self.hidden_size * 8) / (3 * 64)) * 64)
+        self.ffn_hidden_size = kwargs.get('ffn_hidden_size', math.ceil((self.hidden_size * math.pi) / (64)) * 64)
         self.activation      = kwargs.get('activation', 'silu')
 
         # RMSNorm Parameters
@@ -97,9 +98,9 @@ class LayerNorm(nn.Module):
 # RoPE(x) = [x_0, x_1,  ... x_{d-2},  x_{d-1}]*[cos(m\theta_0), cos(m\theta_0), ..., cos(m\theta_{d/2-1}, cos(m\theta_{d/2-1})] +
 #           [-x_1, x_0, ..., -x_{d-1}, x_{d-2}]*[sin(m\theta_0), sin(m\theta_0), ..., sin(m\theta_{d/2-1}, sin(m\theta_{d/2-1})]
 def precompute_freq_cis(dim: int, config: KernConfig):
-    rope_base = config.get('rope_base', 1e6)
-    yarn_params = config.get('yarn_params', None)
-    seq_len = config.get('seq_len', 32*1024)
+    rope_base = getattr(config, 'rope_base', 1e6)
+    yarn_params = getattr(config, 'yarn_params', None)
+    seq_len = getattr(config, 'seq_len', 32*1024)
     # compute freqs
     # freqs = [ base^{-2i/d} ], i = [0, 2, ..., dim-2]
     freqs = 1.0 / torch.pow(rope_base, torch.arange(0, dim, 2)[:dim//2] / dim)
@@ -161,7 +162,7 @@ def apply_rotate_embed(x: torch.Tensor, freqs_cos, freqs_sin):
     # not need [x_0, x_1], ..., [x_{d-2}, x_{d-1}]
     # every two dim is fine 
     # e.g: [x_0, x_{d/2}], [x_1, x_{d/2+1}], ..., [x_{d/2-1}, x_{d-1}]
-    assert x.dim == 4 and x.shape[1] == freqs_cos.size(0)
+    assert x.dim() == 4 and x.shape[1] == freqs_cos.size(0)
     dim = x.shape[-1]
     rotate_half_x = torch.cat((-x[..., dim//2:], x[..., :dim//2]),dim=-1)
     # freqs_cos -> [seq_len, 1, dim]
@@ -184,8 +185,8 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(self.n_local_heads*self.head_dim, config.hidden_size,bias=False)
 
         # q, k norm
-        self.q_norm = RMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.k_norm = RMSNorm(config.hidden_size, config.rms_norm_eps)
+        self.q_norm = RMSNorm(self.head_dim, config.rms_norm_eps)
+        self.k_norm = RMSNorm(self.head_dim, config.rms_norm_eps)
 
         # dropout
         self.attn_dropout = nn.Dropout(config.dropout)
@@ -401,10 +402,10 @@ class KernModel(nn.Module):
         self.dropout = nn.Dropout(config.dropout)
         self.layers = nn.ModuleList([KernBlock(l, config) for l in range (self.num_hidden_layers)])
         self.norm = RMSNorm(config.hidden_size, config.rms_norm_eps)
-        freqs_cos, freqs_sin = precompute_freq_cis(config.hidden_size, config)
+        freqs_cos, freqs_sin = precompute_freq_cis(config.head_dim, config)
         self.register_buffer('freqs_cos', freqs_cos)
         self.register_buffer('freqs_sin', freqs_sin)
-    def foward(self, input_ids, attention_mask=None, kv_cache=None, use_cache=False, **kwargs):
+    def forward(self, input_ids, attention_mask=None, kv_cache=None, use_cache=False, **kwargs):
         _, seq_len = input_ids.shape         
         if hasattr(kv_cache, 'layers'): 
             kv_cache = None
@@ -413,7 +414,7 @@ class KernModel(nn.Module):
         hidden_state = self.dropout(self.embedding_layer(input_ids))
         # during meta-device init, recompute rope buffers
         if self.freqs_cos[0, 0] == 0:
-            freqs_cos, freqs_sin = precompute_freq_cis(self.config.hidden_size, self.config)
+            freqs_cos, freqs_sin = precompute_freq_cis(self.config.head_dim, self.config)
             self.freqs_cos, self.freqs_sin = freqs_cos.to(hidden_state.device), freqs_sin.to(hidden_state.device)
 
         position_embedding = (self.freqs_cos[start_pos:start_pos+seq_len], self.freqs_sin[start_pos:start_pos+seq_len])
@@ -430,7 +431,7 @@ class KernModel(nn.Module):
 
         hidden_state = self.norm(hidden_state)
         # whether use moe or not use moe, aux_loss is a tensor
-        aux_loss = sum([l.mlp.aux_loss for l in self.layers if isinstance(l.mlp, MoEFFN)], hidden_state.new_zeros(1).squeeze())
+        aux_loss = sum([l.mlp_layer.aux_loss for l in self.layers if isinstance(l.mlp_layer, MoEFFN)], hidden_state.new_zeros(1).squeeze())
         return hidden_state, presents_kv_cache, aux_loss
 
 class KernCausalLM(PreTrainedModel, GenerationMixin):

@@ -1,0 +1,8 @@
+# Runtime and training dependencies used by Kern.
+# For CUDA-enabled servers, install the matching PyTorch wheel from
+# https://pytorch.org/ before installing the remaining packages if needed.
+torch==2.6.0
+transformers==5.23.0
+datasets==3.6.0
+numpy==1.26.4
+swanlab==0.7.11
