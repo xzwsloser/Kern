@@ -7,10 +7,10 @@ from transformers.modeling_outputs import MoeCausalLMOutputWithPast
 
 class KernConfig(PreTrainedConfig): 
     model_type = "kern" 
-    def __init__(self, hidden_size=768, num_layers=8, use_moe=False, **kwargs):
+    def __init__(self, hidden_size=768, num_hidden_layers=8, use_moe=False, **kwargs):
         # model arch
         self.hidden_size = hidden_size
-        self.num_layers = num_layers
+        self.num_hidden_layers = num_hidden_layers
         self.use_moe = use_moe
         self.dropout = kwargs.get('dropout', 0.0)
 
