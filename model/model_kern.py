@@ -112,7 +112,7 @@ def precompute_freq_cis(dim: int, config: KernConfig):
         #            beta_slow < beta < beta_fast, freqs keep linear scale
         # factor: max_seq_len / origin_len
         origin_len, beta_fast, beta_slow, factor = (
-            yarn_params.get('orign_len', 2048),
+            yarn_params.get('origin_len', 2048),
             yarn_params.get('beta_fast', 32.0),
             yarn_params.get('beta_slow', 1.0),
             yarn_params.get('factor', 16))
@@ -357,7 +357,7 @@ class MoEFFN(nn.Module):
         if self.training and self.route_aux_loss_coef > 0:
             # token_idxs -> [T, topk], with values in [0, num_experts)
             # load -> [num_experts], the fraction of routed slots sent to each expert
-            load = F.one_hot(token_idxs, num_classes=self.num_experts).float().mean(dim=(0, 1))
+            load = F.one_hot(token_idxs, num_classes=self.num_experts).float().mean(dim=0)
             # scores -> [T, num_experts] -> [num_experts]
             # The standard auxiliary loss is N * sum(load_i * importance_i).
             self.aux_loss = (
