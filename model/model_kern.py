@@ -348,19 +348,21 @@ class MoEFFN(nn.Module):
                 token_idx = mask.any(dim=-1).nonzero().flatten()
                 # [token_selected, 1]
                 token_weight = weights[mask].reshape(-1, 1)
-                output.index_add_(0, token_idx, (expert(x_flat[token_idx]) * token_weight)).to(output.dtype)
+                output.index_add_(0, token_idx, (expert(x_flat[token_idx]) * token_weight).to(output.dtype))
             elif self.training:
                 # if training, there exist expert with no token select
                 output[0, 0] += 0 * sum([p.sum() for p in expert.parameters()])
 
         # aux_loss
         if self.training and self.route_aux_loss_coef > 0:
-            # load -> [T, topk, num_experts_topk]
-            #      -> [topk, num_experts_topk] 
-            load = F.one_hot(token_idxs, self.num_experts_topk).float().mean(dim=0)
-            # scores -> [T, num_experts]
-            #        -> [num_experts]
-            self.aux_loss = (load * scores.mean(dim=0)).sum() * self.num_experts_topk * self.route_aux_loss_coef
+            # token_idxs -> [T, topk], with values in [0, num_experts)
+            # load -> [num_experts], the fraction of routed slots sent to each expert
+            load = F.one_hot(token_idxs, num_classes=self.num_experts).float().mean(dim=(0, 1))
+            # scores -> [T, num_experts] -> [num_experts]
+            # The standard auxiliary loss is N * sum(load_i * importance_i).
+            self.aux_loss = (
+                load * scores.mean(dim=0)
+            ).sum() * self.num_experts * self.route_aux_loss_coef
         else:
             self.aux_loss = scores.new_zeros(1).squeeze()
 

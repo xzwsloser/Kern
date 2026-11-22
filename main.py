@@ -1,7 +1,7 @@
 from model.model_kern import KernConfig, KernCausalLM
 
 if __name__ == '__main__':
-    config = KernConfig()
+    config = KernConfig(use_moe=True)
     model = KernCausalLM(config)
     params = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
