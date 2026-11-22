@@ -238,7 +238,7 @@ class Attention(nn.Module):
         v = self.repeat_kv(v, self.n_query_per_head).transpose(1, 2)
 
         # flash attention
-        if self.flash_attention and (not self.is_causal or kv_cache is None) and (attention_mask is None or torch.full(attention_mask, 1)):
+        if self.flash_attention and (not self.is_causal or kv_cache is None) and (attention_mask is None or torch.all(attention_mask == 1)):
             # output -> [batch_size, head, seq_len, seq_len_total]
             output = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout if self.training else 0.0, is_causal=self.is_causal)
         else:
