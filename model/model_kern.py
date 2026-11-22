@@ -249,7 +249,7 @@ class Attention(nn.Module):
                 attention_score[:, :, :, -seq_len:] += torch.full((seq_len, seq_len), float('-inf'), device=attention_score.device).triu(1)
             # attention_mask -> [B, seq_len_total] -> tokens need to drop
             if attention_mask is not None:
-                attention_score = attention_score.masked_fill(attention_mask[:, None, None, :] == 1, float('-inf'))
+                attention_score = attention_score.masked_fill(attention_mask[:, None, None, :] == 0, float('-inf'))
 
             # output -> [batch_size, head, seq_len, head_dim]
             output = self.attn_dropout(F.softmax(attention_score, dim=-1).type_as(q)) @ v
